@@ -1,8 +1,14 @@
 ﻿using AppointmentSystem.WPF.Commands;
 using AppointmentSystem.WPF.Models;
 using AppointmentSystem.WPF.Services;
+using CsvHelper;
+using CsvHelper.Configuration;
+using Microsoft.Win32;
 using System;
 using System.Collections.ObjectModel;
+using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -12,6 +18,14 @@ namespace AppointmentSystem.WPF.ViewModels
     public class MainViewModel : ViewModelBase
     {
         private readonly IAppointmentApiService _apiService;
+        private ObservableCollection<AppointmentModel> _allAppointments; // NEW: Store all appointments
+
+        public List<string> StatusOptions { get; } = new List<string>
+        {
+            "Scheduled",
+            "Completed",
+            "Cancelled"
+        };
 
         public MainViewModel(IAppointmentApiService apiService)
         {
@@ -27,6 +41,9 @@ namespace AppointmentSystem.WPF.ViewModels
             DeleteAppointmentCommand = new RelayCommand(async _ => await DeleteAppointmentAsync(),
                 _ => SelectedAppointment != null);
             CancelCommand = new RelayCommand(_ => CancelEdit());
+            ExportToCsvCommand = new RelayCommand(_ => ExportToCsv(),
+                _ => Appointments != null && Appointments.Count > 0);
+            ClearSearchCommand = new RelayCommand(_ => ClearSearch()); // NEW
 
             // Load initial data
             Task.Run(async () => await LoadAppointmentsAsync());
@@ -84,6 +101,20 @@ namespace AppointmentSystem.WPF.ViewModels
 
         private int _editingId;
 
+        // NEW: Search property
+        private string _searchText;
+        public string SearchText
+        {
+            get => _searchText;
+            set
+            {
+                if (SetProperty(ref _searchText, value))
+                {
+                    FilterAppointments();
+                }
+            }
+        }
+
         // Commands
         public ICommand LoadAppointmentsCommand { get; }
         public ICommand AddAppointmentCommand { get; }
@@ -91,6 +122,8 @@ namespace AppointmentSystem.WPF.ViewModels
         public ICommand EditAppointmentCommand { get; }
         public ICommand DeleteAppointmentCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand ExportToCsvCommand { get; }
+        public ICommand ClearSearchCommand { get; } // NEW
 
         // Methods
         private async Task LoadAppointmentsAsync()
@@ -100,7 +133,8 @@ namespace AppointmentSystem.WPF.ViewModels
                 var appointments = await _apiService.GetAllAppointmentsAsync();
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    Appointments = new ObservableCollection<AppointmentModel>(appointments);
+                    _allAppointments = new ObservableCollection<AppointmentModel>(appointments);
+                    FilterAppointments(); // Apply current filter
                 });
             }
             catch (Exception ex)
@@ -108,6 +142,34 @@ namespace AppointmentSystem.WPF.ViewModels
                 MessageBox.Show($"Error loading appointments: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        // NEW: Filter appointments based on search text
+        private void FilterAppointments()
+        {
+            if (_allAppointments == null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(SearchText))
+            {
+                // Show all appointments
+                Appointments = new ObservableCollection<AppointmentModel>(_allAppointments);
+            }
+            else
+            {
+                // Filter by patient name (case-insensitive)
+                var filtered = _allAppointments.Where(a =>
+                    a.PatientName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                Appointments = new ObservableCollection<AppointmentModel>(filtered);
+            }
+        }
+
+        // NEW: Clear search
+        private void ClearSearch()
+        {
+            SearchText = string.Empty;
         }
 
         private void PrepareNewAppointment()
@@ -201,6 +263,72 @@ namespace AppointmentSystem.WPF.ViewModels
         private bool CanSaveAppointment()
         {
             return !string.IsNullOrWhiteSpace(PatientName);
+        }
+
+        private void ExportToCsv()
+        {
+            try
+            {
+                // Export filtered appointments (what user currently sees)
+                var appointmentsToExport = Appointments ?? _allAppointments;
+
+                if (appointmentsToExport == null || appointmentsToExport.Count == 0)
+                {
+                    MessageBox.Show("No appointments to export.", "Export",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                var saveFileDialog = new SaveFileDialog
+                {
+                    Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*",
+                    DefaultExt = "csv",
+                    FileName = $"Appointments_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+                    {
+                        HasHeaderRecord = true,
+                    };
+
+                    using (var writer = new StreamWriter(saveFileDialog.FileName))
+                    using (var csv = new CsvWriter(writer, config))
+                    {
+                        // Write header
+                        csv.WriteField("ID");
+                        csv.WriteField("Patient Name");
+                        csv.WriteField("Appointment Date");
+                        csv.WriteField("Status");
+                        csv.WriteField("Description");
+                        csv.NextRecord();
+
+                        // Write data
+                        foreach (var appointment in appointmentsToExport)
+                        {
+                            csv.WriteField(appointment.Id);
+                            csv.WriteField(appointment.PatientName);
+                            csv.WriteField(appointment.AppointmentDate.ToString("yyyy-MM-dd HH:mm:ss"));
+                            csv.WriteField(appointment.Status);
+                            csv.WriteField(appointment.Description ?? string.Empty);
+                            csv.NextRecord();
+                        }
+                    }
+
+                    var message = string.IsNullOrWhiteSpace(SearchText)
+                        ? $"Successfully exported {appointmentsToExport.Count} appointments"
+                        : $"Successfully exported {appointmentsToExport.Count} filtered appointments";
+
+                    MessageBox.Show($"{message} to:\n{saveFileDialog.FileName}",
+                        "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error exporting to CSV: {ex.Message}", "Export Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }

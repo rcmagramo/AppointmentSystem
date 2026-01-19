@@ -29,11 +29,37 @@
             <GroupBox Header="Appointments" Grid.Column="0" Margin="0,0,5,0">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <DataGrid Grid.Row="0" ItemsSource="{Binding Appointments}"
+                    <!-- NEW: Search Box -->
+                    <Grid Grid.Row="0" Margin="0,5,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="Search Patient:" 
+                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                        <TextBox Grid.Column="1" 
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Padding="5" VerticalAlignment="Center"
+                                 ToolTip="Type patient name to filter appointments"/>
+
+                        <Button Grid.Column="2" Content="✕" 
+                                Command="{Binding ClearSearchCommand}"
+                                Width="30" Height="30" Margin="5,0,0,0"
+                                FontSize="16" FontWeight="Bold"
+                                ToolTip="Clear search"
+                                Background="#F8F9FA"/>
+                    </Grid>
+
+                    <!-- DataGrid -->
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding Appointments}"
                               SelectedItem="{Binding SelectedAppointment}"
                               AutoGenerateColumns="False" IsReadOnly="True"
                               SelectionMode="Single" CanUserAddRows="False">
@@ -45,13 +71,18 @@
                         </DataGrid.Columns>
                     </DataGrid>
 
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,10,0,0">
+                    <!-- Action Buttons -->
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
                         <Button Content="Refresh" Command="{Binding LoadAppointmentsCommand}"
                                 Width="80" Padding="5" Margin="0,0,5,0"/>
                         <Button Content="Edit" Command="{Binding EditAppointmentCommand}"
                                 Width="80" Padding="5" Margin="0,0,5,0"/>
                         <Button Content="Delete" Command="{Binding DeleteAppointmentCommand}"
-                                Width="80" Padding="5" Background="#DC3545" Foreground="White"/>
+                                Width="80" Padding="5" Margin="0,0,5,0"
+                                Background="#DC3545" Foreground="White"/>
+                        <Button Content="Export CSV" Command="{Binding ExportToCsvCommand}"
+                                Width="90" Padding="5" 
+                                Background="#17A2B8" Foreground="White"/>
                     </StackPanel>
                 </Grid>
             </GroupBox>
@@ -71,11 +102,9 @@
                                 Margin="0,0,0,10"/>
 
                     <TextBlock Text="Status" Margin="0,0,0,2"/>
-                    <ComboBox SelectedValue="{Binding Status}" Margin="0,0,0,10">
-                        <ComboBoxItem Content="Scheduled" IsSelected="True"/>
-                        <ComboBoxItem Content="Completed"/>
-                        <ComboBoxItem Content="Cancelled"/>
-                    </ComboBox>
+                    <ComboBox ItemsSource="{Binding StatusOptions}" 
+                              SelectedItem="{Binding Status}" 
+                              Margin="0,0,0,10"/>
 
                     <TextBlock Text="Description" Margin="0,0,0,2"/>
                     <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
@@ -96,7 +125,15 @@
         <!-- Footer -->
         <StatusBar Grid.Row="2" Margin="0,10,0,0">
             <StatusBarItem>
-                <TextBlock Text="Ready" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Ready" Margin="0,0,10,0"/>
+                    <TextBlock Text="|" Margin="0,0,10,0"/>
+                    <TextBlock>
+                <Run Text="Showing "/>
+                <Run Text="{Binding Appointments.Count, Mode=OneWay, FallbackValue=0}" FontWeight="Bold"/>
+                <Run Text=" appointment(s)"/>
+                    </TextBlock>
+                </StackPanel>
             </StatusBarItem>
         </StatusBar>
     </Grid>
