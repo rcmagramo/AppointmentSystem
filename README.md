@@ -23,6 +23,8 @@ WPF desktop application with ASP.NET Core Web API backend for managing medical a
 ✓ Repository & Service patterns
 ✓ Error handling & logging
 ✓ Async operations
+✓ Patient search functionality
+✓ CSV export
 
 ## API Endpoints
 - GET /api/appointments
@@ -38,8 +40,6 @@ WPF desktop application with ASP.NET Core Web API backend for managing medical a
 
 ## Future Enhancements
 - Patient entity with full CRUD
-- Patient search functionality
-- CSV export
 - Appointment overlap validation
 - Unit tests
 - Authentication
