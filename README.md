@@ -1,4 +1,45 @@
-Appointment Management System
+# Appointment Management System
 
-A desktop application built using Windows Presentation Foundation (WPF) with a RESTful Web API backend. The system is designed as a technical demonstration project with a time constraint of 4-5 hours, focusing on architectural best practices, design patterns, and modern software development principles.
-The solution will showcase expertise in MVVM architecture, dependency injection, RESTful API design, ORM implementation, and separation of concerns—key competencies required for enterprise-level .NET development.
+## Overview
+WPF desktop application with ASP.NET Core Web API backend for managing medical appointments.
+
+## Prerequisites
+- Visual Studio 2019+
+- .NET Framework 4.8 SDK
+- .NET 6.0/7.0 SDK
+
+## How to Run
+1. Open solution in Visual Studio
+2. Set both projects to start (Solution Properties → Multiple Startup)
+3. Press F5
+4. API runs on https://localhost:7205
+5. WPF client opens automatically
+
+## Features
+✓ CRUD operations for appointments
+✓ MVVM with zero code-behind
+✓ Dependency injection
+✓ Entity Framework Core + SQLite
+✓ Repository & Service patterns
+✓ Error handling & logging
+✓ Async operations
+
+## API Endpoints
+- GET /api/appointments
+- GET /api/appointments/{id}
+- POST /api/appointments
+- PUT /api/appointments/{id}
+- DELETE /api/appointments/{id}
+
+## Architecture
+- **Single Responsibility**: Each class has one purpose
+- **Dependency Inversion**: Interfaces + IoC
+- **Separation of Concerns**: Controllers → Services → Repositories
+
+## Future Enhancements
+- Patient entity with full CRUD
+- Patient search functionality
+- CSV export
+- Appointment overlap validation
+- Unit tests
+- Authentication
