@@ -18,7 +18,7 @@ namespace AppointmentSystem.WPF.ViewModels
     public class MainViewModel : ViewModelBase
     {
         private readonly IAppointmentApiService _apiService;
-        private ObservableCollection<AppointmentModel> _allAppointments; // NEW: Store all appointments
+        private ObservableCollection<AppointmentModel> _allAppointments; 
 
         public List<string> StatusOptions { get; } = new List<string>
         {
@@ -43,7 +43,7 @@ namespace AppointmentSystem.WPF.ViewModels
             CancelCommand = new RelayCommand(_ => CancelEdit());
             ExportToCsvCommand = new RelayCommand(_ => ExportToCsv(),
                 _ => Appointments != null && Appointments.Count > 0);
-            ClearSearchCommand = new RelayCommand(_ => ClearSearch()); // NEW
+            ClearSearchCommand = new RelayCommand(_ => ClearSearch()); 
 
             // Load initial data
             Task.Run(async () => await LoadAppointmentsAsync());
@@ -101,7 +101,6 @@ namespace AppointmentSystem.WPF.ViewModels
 
         private int _editingId;
 
-        // NEW: Search property
         private string _searchText;
         public string SearchText
         {
@@ -123,7 +122,7 @@ namespace AppointmentSystem.WPF.ViewModels
         public ICommand DeleteAppointmentCommand { get; }
         public ICommand CancelCommand { get; }
         public ICommand ExportToCsvCommand { get; }
-        public ICommand ClearSearchCommand { get; } // NEW
+        public ICommand ClearSearchCommand { get; }
 
         // Methods
         private async Task LoadAppointmentsAsync()
@@ -134,7 +133,7 @@ namespace AppointmentSystem.WPF.ViewModels
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     _allAppointments = new ObservableCollection<AppointmentModel>(appointments);
-                    FilterAppointments(); // Apply current filter
+                    FilterAppointments(); 
                 });
             }
             catch (Exception ex)
@@ -144,7 +143,7 @@ namespace AppointmentSystem.WPF.ViewModels
             }
         }
 
-        // NEW: Filter appointments based on search text
+        //Filter appointments based on search text
         private void FilterAppointments()
         {
             if (_allAppointments == null)
@@ -152,12 +151,10 @@ namespace AppointmentSystem.WPF.ViewModels
 
             if (string.IsNullOrWhiteSpace(SearchText))
             {
-                // Show all appointments
-                Appointments = new ObservableCollection<AppointmentModel>(_allAppointments);
+               Appointments = new ObservableCollection<AppointmentModel>(_allAppointments);
             }
             else
             {
-                // Filter by patient name (case-insensitive)
                 var filtered = _allAppointments.Where(a =>
                     a.PatientName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
                     .ToList();
@@ -166,7 +163,7 @@ namespace AppointmentSystem.WPF.ViewModels
             }
         }
 
-        // NEW: Clear search
+        // Clear search
         private void ClearSearch()
         {
             SearchText = string.Empty;
@@ -269,7 +266,6 @@ namespace AppointmentSystem.WPF.ViewModels
         {
             try
             {
-                // Export filtered appointments (what user currently sees)
                 var appointmentsToExport = Appointments ?? _allAppointments;
 
                 if (appointmentsToExport == null || appointmentsToExport.Count == 0)
