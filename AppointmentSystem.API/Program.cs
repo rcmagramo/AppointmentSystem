@@ -1,53 +1,76 @@
-using AppointmentSystem.API.Data;
-using AppointmentSystem.API.Repositories;
-using AppointmentSystem.API.Services;
-using Microsoft.EntityFrameworkCore;
+using AppointmentSystem.API.Middleware;
+using AppointmentSystem.Application;
+using AppointmentSystem.Infrastructure;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Information()
     .WriteTo.Console()
-    .WriteTo.File("logs/api-.txt", rollingInterval: RollingInterval.Day)
+    .WriteTo.File("logs/appointment-api-.log", rollingInterval: RollingInterval.Day)
     .CreateLogger();
 
 builder.Host.UseSerilog();
 
-// Add services to the container
+// Add services
 builder.Services.AddControllers();
+
+// API Versioning
+builder.Services.AddApiVersioning(options =>
+{
+    options.DefaultApiVersion = new ApiVersion(1, 0);
+    options.AssumeDefaultVersionWhenUnspecified = true;
+    options.ReportApiVersions = true;
+});
+
+// Add our layers
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configure CORS
+// Proper CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowWPF", policy =>
+    options.AddPolicy("AllowedOrigins", policy =>
     {
-        policy.AllowAnyOrigin()
+        var allowedOrigins = builder.Configuration
+            .GetSection("Cors:AllowedOrigins")
+            .Get<string[]>() ?? new[] { "https://localhost:7001" };
+
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .AllowAnyHeader()
+              .WithExposedHeaders("X-Correlation-ID");
     });
 });
 
-// Configure SQLite Database
-builder.Services.AddDbContext<AppointmentDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("fixed", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 100;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+    });
+});
 
-// Register services for Dependency Injection
-builder.Services.AddScoped<IAppointmentRepository, AppointmentRepository>();
-builder.Services.AddScoped<IAppointmentService, AppointmentService>();
+// Health Checks
+builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-// Ensure database is created
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<AppointmentDbContext>();
-    dbContext.Database.EnsureCreated();
-}
+// Middleware (order matters!)
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
 
-// Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -55,8 +78,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowWPF");
-app.UseAuthorization();
-app.MapControllers();
+app.UseCors("AllowedOrigins");
+app.UseRateLimiter();
 
-app.Run();
+app.MapControllers().RequireRateLimiting("fixed");
+app.MapHealthChecks("/health");
+
+await app.RunAsync();

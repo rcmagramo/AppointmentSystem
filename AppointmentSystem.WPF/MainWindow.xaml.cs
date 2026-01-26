@@ -1,14 +1,13 @@
 ﻿using AppointmentSystem.WPF.ViewModels;
 using System.Windows;
 
-namespace AppointmentSystem.WPF
+namespace AppointmentSystem.WPF;
+
+public partial class MainWindow : Window
 {
-    public partial class MainWindow : Window
+    public MainWindow(MainViewModel viewModel)
     {
-        public MainWindow(MainViewModel viewModel)
-        {
-            InitializeComponent();
-            DataContext = viewModel;
-        }
+        InitializeComponent();
+        DataContext = viewModel;
     }
 }

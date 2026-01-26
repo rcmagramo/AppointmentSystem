@@ -1,15 +1,31 @@
 ﻿using AppointmentSystem.WPF.Models;
-using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
-namespace AppointmentSystem.WPF.Services
+namespace AppointmentSystem.WPF.Services;
+
+public interface IAppointmentApiService
 {
-    public interface IAppointmentApiService
-    {
-        Task<List<AppointmentModel>> GetAllAppointmentsAsync();
-        Task<AppointmentModel> GetAppointmentByIdAsync(int id);
-        Task<AppointmentModel> CreateAppointmentAsync(AppointmentModel appointment);
-        Task<AppointmentModel> UpdateAppointmentAsync(int id, AppointmentModel appointment);
-        Task<bool> DeleteAppointmentAsync(int id);
-    }
+    Task<PagedResult<AppointmentDto>> GetAppointmentsAsync(
+        string? searchTerm = null,
+        int pageNumber = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default);
+
+    Task<AppointmentDto?> GetAppointmentByIdAsync(
+        int id,
+        CancellationToken cancellationToken = default);
+
+    Task<AppointmentDto> CreateAppointmentAsync(
+        CreateAppointmentRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AppointmentDto> UpdateAppointmentAsync(
+        int id,
+        UpdateAppointmentRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAppointmentAsync(
+        int id,
+        CancellationToken cancellationToken = default);
 }

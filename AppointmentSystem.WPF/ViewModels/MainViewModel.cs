@@ -1,6 +1,7 @@
-﻿using AppointmentSystem.WPF.Commands;
-using AppointmentSystem.WPF.Models;
+﻿using AppointmentSystem.WPF.Models;
 using AppointmentSystem.WPF.Services;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using CsvHelper;
 using CsvHelper.Configuration;
 using Microsoft.Win32;
@@ -9,180 +10,134 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
 
-namespace AppointmentSystem.WPF.ViewModels
+namespace AppointmentSystem.WPF.ViewModels;
+
+public partial class MainViewModel : ObservableObject
 {
-    public class MainViewModel : ViewModelBase
+    private readonly IAppointmentApiService _apiService;
+    private CancellationTokenSource? _cancellationTokenSource;
+    private CancellationTokenSource? _searchCancellationTokenSource;
+
+    public MainViewModel(IAppointmentApiService apiService)
     {
-        private readonly IAppointmentApiService _apiService;
-        private ObservableCollection<AppointmentModel> _allAppointments; 
+        _apiService = apiService;
 
-        public List<string> StatusOptions { get; } = new List<string>
+        // Initialize with current date
+        AppointmentDate = DateTime.Now.AddDays(1);
+
+        // Load initial data
+        _ = LoadAppointmentsAsync();
+    }
+
+    // ==================== Properties ====================
+
+    [ObservableProperty]
+    private ObservableCollection<AppointmentDto> _appointments = new();
+
+    [ObservableProperty]
+    private AppointmentDto? _selectedAppointment;
+
+    [ObservableProperty]
+    private string _patientName = string.Empty;
+
+    [ObservableProperty]
+    private DateTime _appointmentDate;
+
+    [ObservableProperty]
+    private string? _description;
+
+    [ObservableProperty]
+    private string _status = "Scheduled";
+
+    [ObservableProperty]
+    private bool _isEditing;
+
+    [ObservableProperty]
+    private int _editingId;
+
+    [ObservableProperty]
+    private string _searchText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isLoading;
+
+    [ObservableProperty]
+    private string? _errorMessage;
+
+    [ObservableProperty]
+    private int _currentPage = 1;
+
+    [ObservableProperty]
+    private int _pageSize = 20;
+
+    [ObservableProperty]
+    private int _totalCount;
+
+    [ObservableProperty]
+    private int _totalPages;
+
+    public ObservableCollection<string> StatusOptions { get; } = new()
+    {
+        "Scheduled",
+        "Completed",
+        "Cancelled",
+        "NoShow"
+    };
+
+    public bool HasPreviousPage => CurrentPage > 1;
+    public bool HasNextPage => CurrentPage < TotalPages;
+
+    // ==================== Commands ====================
+
+    [RelayCommand]
+    private async Task LoadAppointmentsAsync()
+    {
+        await ExecuteWithLoadingAsync(async (ct) =>
         {
-            "Scheduled",
-            "Completed",
-            "Cancelled"
-        };
+            var result = await _apiService.GetAppointmentsAsync(
+                SearchText,
+                CurrentPage,
+                PageSize,
+                ct);
 
-        public MainViewModel(IAppointmentApiService apiService)
-        {
-            _apiService = apiService;
-
-            // Initialize commands
-            LoadAppointmentsCommand = new RelayCommand(async _ => await LoadAppointmentsAsync());
-            AddAppointmentCommand = new RelayCommand(_ => PrepareNewAppointment());
-            SaveAppointmentCommand = new RelayCommand(async _ => await SaveAppointmentAsync(),
-                _ => CanSaveAppointment());
-            EditAppointmentCommand = new RelayCommand(EditAppointment,
-                _ => SelectedAppointment != null);
-            DeleteAppointmentCommand = new RelayCommand(async _ => await DeleteAppointmentAsync(),
-                _ => SelectedAppointment != null);
-            CancelCommand = new RelayCommand(_ => CancelEdit());
-            ExportToCsvCommand = new RelayCommand(_ => ExportToCsv(),
-                _ => Appointments != null && Appointments.Count > 0);
-            ClearSearchCommand = new RelayCommand(_ => ClearSearch()); 
-
-            // Load initial data
-            Task.Run(async () => await LoadAppointmentsAsync());
-        }
-
-        // Properties
-        private ObservableCollection<AppointmentModel> _appointments;
-        public ObservableCollection<AppointmentModel> Appointments
-        {
-            get => _appointments;
-            set => SetProperty(ref _appointments, value);
-        }
-
-        private AppointmentModel _selectedAppointment;
-        public AppointmentModel SelectedAppointment
-        {
-            get => _selectedAppointment;
-            set => SetProperty(ref _selectedAppointment, value);
-        }
-
-        private string _patientName;
-        public string PatientName
-        {
-            get => _patientName;
-            set => SetProperty(ref _patientName, value);
-        }
-
-        private DateTime _appointmentDate = DateTime.Now;
-        public DateTime AppointmentDate
-        {
-            get => _appointmentDate;
-            set => SetProperty(ref _appointmentDate, value);
-        }
-
-        private string _description;
-        public string Description
-        {
-            get => _description;
-            set => SetProperty(ref _description, value);
-        }
-
-        private string _status = "Scheduled";
-        public string Status
-        {
-            get => _status;
-            set => SetProperty(ref _status, value);
-        }
-
-        private bool _isEditing;
-        public bool IsEditing
-        {
-            get => _isEditing;
-            set => SetProperty(ref _isEditing, value);
-        }
-
-        private int _editingId;
-
-        private string _searchText;
-        public string SearchText
-        {
-            get => _searchText;
-            set
+            Appointments.Clear();
+            foreach (var appointment in result.Items)
             {
-                if (SetProperty(ref _searchText, value))
-                {
-                    FilterAppointments();
-                }
+                Appointments.Add(appointment);
             }
-        }
 
-        // Commands
-        public ICommand LoadAppointmentsCommand { get; }
-        public ICommand AddAppointmentCommand { get; }
-        public ICommand SaveAppointmentCommand { get; }
-        public ICommand EditAppointmentCommand { get; }
-        public ICommand DeleteAppointmentCommand { get; }
-        public ICommand CancelCommand { get; }
-        public ICommand ExportToCsvCommand { get; }
-        public ICommand ClearSearchCommand { get; }
+            TotalCount = result.TotalCount;
+            TotalPages = result.TotalPages;
+            ErrorMessage = null;
 
-        // Methods
-        private async Task LoadAppointmentsAsync()
+            OnPropertyChanged(nameof(HasPreviousPage));
+            OnPropertyChanged(nameof(HasNextPage));
+        });
+    }
+
+    [RelayCommand]
+    private void PrepareNewAppointment()
+    {
+        IsEditing = false;
+        PatientName = string.Empty;
+        AppointmentDate = DateTime.Now.AddDays(1);
+        Description = null;
+        Status = "Scheduled";
+        ErrorMessage = null;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveAppointment))]
+    private async Task SaveAppointmentAsync()
+    {
+        await ExecuteWithLoadingAsync(async (ct) =>
         {
-            try
+            if (IsEditing)
             {
-                var appointments = await _apiService.GetAllAppointmentsAsync();
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    _allAppointments = new ObservableCollection<AppointmentModel>(appointments);
-                    FilterAppointments(); 
-                });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error loading appointments: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        //Filter appointments based on search text
-        private void FilterAppointments()
-        {
-            if (_allAppointments == null)
-                return;
-
-            if (string.IsNullOrWhiteSpace(SearchText))
-            {
-               Appointments = new ObservableCollection<AppointmentModel>(_allAppointments);
-            }
-            else
-            {
-                var filtered = _allAppointments.Where(a =>
-                    a.PatientName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                Appointments = new ObservableCollection<AppointmentModel>(filtered);
-            }
-        }
-
-        // Clear search
-        private void ClearSearch()
-        {
-            SearchText = string.Empty;
-        }
-
-        private void PrepareNewAppointment()
-        {
-            IsEditing = false;
-            PatientName = string.Empty;
-            AppointmentDate = DateTime.Now;
-            Description = string.Empty;
-            Status = "Scheduled";
-        }
-
-        private async Task SaveAppointmentAsync()
-        {
-            try
-            {
-                var appointment = new AppointmentModel
+                var request = new UpdateAppointmentRequest
                 {
                     PatientName = PatientName,
                     AppointmentDate = AppointmentDate,
@@ -190,141 +145,241 @@ namespace AppointmentSystem.WPF.ViewModels
                     Status = Status
                 };
 
-                if (IsEditing)
-                {
-                    await _apiService.UpdateAppointmentAsync(_editingId, appointment);
-                    MessageBox.Show("Appointment updated successfully!", "Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    await _apiService.CreateAppointmentAsync(appointment);
-                    MessageBox.Show("Appointment created successfully!", "Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-
-                CancelEdit();
-                await LoadAppointmentsAsync();
+                await _apiService.UpdateAppointmentAsync(EditingId, request, ct);
+                ShowSuccess("Appointment updated successfully!");
             }
-            catch (Exception ex)
+            else
             {
-                MessageBox.Show($"Error saving appointment: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void EditAppointment(object parameter)
-        {
-            if (SelectedAppointment != null)
-            {
-                IsEditing = true;
-                _editingId = SelectedAppointment.Id;
-                PatientName = SelectedAppointment.PatientName;
-                AppointmentDate = SelectedAppointment.AppointmentDate;
-                Description = SelectedAppointment.Description;
-                Status = SelectedAppointment.Status;
-            }
-        }
-
-        private async Task DeleteAppointmentAsync()
-        {
-            try
-            {
-                var result = MessageBox.Show("Are you sure you want to delete this appointment?",
-                    "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Question);
-
-                if (result == MessageBoxResult.Yes)
+                var request = new CreateAppointmentRequest
                 {
-                    await _apiService.DeleteAppointmentAsync(SelectedAppointment.Id);
-                    MessageBox.Show("Appointment deleted successfully!", "Success",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                    await LoadAppointmentsAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error deleting appointment: {ex.Message}", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void CancelEdit()
-        {
-            IsEditing = false;
-            PatientName = string.Empty;
-            AppointmentDate = DateTime.Now;
-            Description = string.Empty;
-            Status = "Scheduled";
-        }
-
-        private bool CanSaveAppointment()
-        {
-            return !string.IsNullOrWhiteSpace(PatientName);
-        }
-
-        private void ExportToCsv()
-        {
-            try
-            {
-                var appointmentsToExport = Appointments ?? _allAppointments;
-
-                if (appointmentsToExport == null || appointmentsToExport.Count == 0)
-                {
-                    MessageBox.Show("No appointments to export.", "Export",
-                        MessageBoxButton.OK, MessageBoxImage.Information);
-                    return;
-                }
-
-                var saveFileDialog = new SaveFileDialog
-                {
-                    Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*",
-                    DefaultExt = "csv",
-                    FileName = $"Appointments_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+                    PatientName = PatientName,
+                    AppointmentDate = AppointmentDate,
+                    Description = Description
                 };
 
-                if (saveFileDialog.ShowDialog() == true)
-                {
-                    var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-                    {
-                        HasHeaderRecord = true,
-                    };
-
-                    using (var writer = new StreamWriter(saveFileDialog.FileName))
-                    using (var csv = new CsvWriter(writer, config))
-                    {
-                        // Write header
-                        csv.WriteField("ID");
-                        csv.WriteField("Patient Name");
-                        csv.WriteField("Appointment Date");
-                        csv.WriteField("Status");
-                        csv.WriteField("Description");
-                        csv.NextRecord();
-
-                        // Write data
-                        foreach (var appointment in appointmentsToExport)
-                        {
-                            csv.WriteField(appointment.Id);
-                            csv.WriteField(appointment.PatientName);
-                            csv.WriteField(appointment.AppointmentDate.ToString("yyyy-MM-dd HH:mm:ss"));
-                            csv.WriteField(appointment.Status);
-                            csv.WriteField(appointment.Description ?? string.Empty);
-                            csv.NextRecord();
-                        }
-                    }
-
-                    var message = string.IsNullOrWhiteSpace(SearchText)
-                        ? $"Successfully exported {appointmentsToExport.Count} appointments"
-                        : $"Successfully exported {appointmentsToExport.Count} filtered appointments";
-
-                    MessageBox.Show($"{message} to:\n{saveFileDialog.FileName}",
-                        "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
+                await _apiService.CreateAppointmentAsync(request, ct);
+                ShowSuccess("Appointment created successfully!");
             }
-            catch (Exception ex)
+
+            CancelEdit();
+            await LoadAppointmentsAsync();
+        });
+    }
+
+    private bool CanSaveAppointment()
+    {
+        return !string.IsNullOrWhiteSpace(PatientName) &&
+               AppointmentDate > DateTime.Now &&
+               !IsLoading;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanEditDelete))]
+    private void EditAppointment()
+    {
+        if (SelectedAppointment == null) return;
+
+        IsEditing = true;
+        EditingId = SelectedAppointment.Id;
+        PatientName = SelectedAppointment.PatientName;
+        AppointmentDate = SelectedAppointment.AppointmentDate;
+        Description = SelectedAppointment.Description;
+        Status = SelectedAppointment.Status;
+        ErrorMessage = null;
+    }
+
+    private bool CanEditDelete() => SelectedAppointment != null && !IsLoading;
+
+    [RelayCommand(CanExecute = nameof(CanEditDelete))]
+    private async Task DeleteAppointmentAsync()
+    {
+        if (SelectedAppointment == null) return;
+
+        var result = MessageBox.Show(
+            $"Are you sure you want to delete the appointment for {SelectedAppointment.PatientName}?",
+            "Confirm Delete",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        await ExecuteWithLoadingAsync(async (ct) =>
+        {
+            await _apiService.DeleteAppointmentAsync(SelectedAppointment.Id, ct);
+            ShowSuccess("Appointment deleted successfully!");
+            await LoadAppointmentsAsync();
+        });
+    }
+
+    [RelayCommand]
+    private void CancelEdit()
+    {
+        IsEditing = false;
+        PatientName = string.Empty;
+        AppointmentDate = DateTime.Now.AddDays(1);
+        Description = null;
+        Status = "Scheduled";
+        ErrorMessage = null;
+    }
+
+    [RelayCommand]
+    private async Task ClearSearchAsync()
+    {
+        SearchText = string.Empty;
+        CurrentPage = 1;
+        await LoadAppointmentsAsync();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExport))]
+    private void ExportToCsv()
+    {
+        try
+        {
+            var saveFileDialog = new SaveFileDialog
             {
-                MessageBox.Show($"Error exporting to CSV: {ex.Message}", "Export Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+                Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*",
+                DefaultExt = "csv",
+                FileName = $"Appointments_{DateTime.Now:yyyyMMdd_HHmmss}.csv"
+            };
+
+            if (saveFileDialog.ShowDialog() != true) return;
+
+            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+            {
+                HasHeaderRecord = true,
+            };
+
+            using var writer = new StreamWriter(saveFileDialog.FileName);
+            using var csv = new CsvWriter(writer, config);
+
+            csv.WriteRecords(Appointments);
+
+            ShowSuccess($"Successfully exported {Appointments.Count} appointments");
         }
+        catch (Exception ex)
+        {
+            ShowError($"Error exporting to CSV: {ex.Message}");
+        }
+    }
+
+    private bool CanExport() => Appointments?.Count > 0 && !IsLoading;
+
+    [RelayCommand(CanExecute = nameof(HasPreviousPage))]
+    private async Task PreviousPageAsync()
+    {
+        CurrentPage--;
+        await LoadAppointmentsAsync();
+    }
+
+    [RelayCommand(CanExecute = nameof(HasNextPage))]
+    private async Task NextPageAsync()
+    {
+        CurrentPage++;
+        await LoadAppointmentsAsync();
+    }
+
+    // ==================== Property Changed Handlers ====================
+
+    partial void OnSearchTextChanged(string value)
+    {
+        // Debounce search
+        _searchCancellationTokenSource?.Cancel();
+        _searchCancellationTokenSource = new CancellationTokenSource();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(300, _searchCancellationTokenSource.Token);
+                CurrentPage = 1;
+                await LoadAppointmentsAsync();
+            }
+            catch (TaskCanceledException)
+            {
+                // Ignore cancellation
+            }
+        });
+    }
+
+    partial void OnPatientNameChanged(string value)
+    {
+        SaveAppointmentCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnAppointmentDateChanged(DateTime value)
+    {
+        SaveAppointmentCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsLoadingChanged(bool value)
+    {
+        SaveAppointmentCommand.NotifyCanExecuteChanged();
+        EditAppointmentCommand.NotifyCanExecuteChanged();
+        DeleteAppointmentCommand.NotifyCanExecuteChanged();
+        ExportToCsvCommand.NotifyCanExecuteChanged();
+        PreviousPageCommand.NotifyCanExecuteChanged();
+        NextPageCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedAppointmentChanged(AppointmentDto? value)
+    {
+        EditAppointmentCommand.NotifyCanExecuteChanged();
+        DeleteAppointmentCommand.NotifyCanExecuteChanged();
+    }
+
+    // ==================== Helper Methods ====================
+
+    private async Task ExecuteWithLoadingAsync(Func<CancellationToken, Task> action)
+    {
+        if (IsLoading) return;
+
+        try
+        {
+            IsLoading = true;
+            ErrorMessage = null;
+
+            _cancellationTokenSource?.Cancel();
+            _cancellationTokenSource = new CancellationTokenSource();
+
+            await action(_cancellationTokenSource.Token);
+        }
+        catch (ApiValidationException ex)
+        {
+            ErrorMessage = ex.Message;
+            ShowError(ex.Message);
+        }
+        catch (ApiException ex)
+        {
+            ErrorMessage = ex.Message;
+            ShowError(ex.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            // Operation was cancelled, ignore
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = "An unexpected error occurred";
+            ShowError($"An unexpected error occurred: {ex.Message}");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ShowSuccess(string message)
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            MessageBox.Show(message, "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+        });
+    }
+
+    private void ShowError(string message)
+    {
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            MessageBox.Show(message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        });
     }
 }
